@@ -1,3 +1,4 @@
+
 import operator
 from typing import Callable, Iterator, Optional, SupportsFloat, Tuple, Type, Union
 import numpy as np
@@ -7,6 +8,17 @@ import spsa.random.iterator
 from spsa._utils import ArrayLike, immutable_view, type_check
 from math import isqrt, sqrt
 import scipy
+
+'''
+This .py file serves as a module to add additional c(classical) optimizers 
+to scipy.optimize.minimize, since that is used for our QAOA_run function. 
+
+To enable using these, simply import this py (as import scipy_additional_optimizers)
+and then you are able to use 
+scipy.optimize.minimize(f, x0, args = (), method = <method_name>, kwargs ...). 
+For example, for SPSA one could do 
+scipy.optimize.minimize(f, x0, args = (), method = spsa_for_scipy, adam = True/False, lr = 0.1, ...)
+'''
 
 
 def spsa_for_scipy(f: Callable[[np.ndarray], float],
@@ -266,3 +278,4 @@ def spsa_for_scipy(f: Callable[[np.ndarray], float],
     else: 
         result.message = 'Minimizer potentially not found; iterations limit hit.'
     return result
+
