@@ -35,6 +35,7 @@ def max_cut_terms_for_graph(G):
 N = 5 #graph size
 p = 3 #circuit depth for QAOA
 optimizer_method = scipy_additional_optimizers.spsa_for_scipy#classical optimizer to use
+optimizer_options = {'adam': False} #dictionary for kwargs for spsa
 # optimizer_method = 'COBYLA'#classical optimizer to use
 init_gamma, init_beta = np.random.rand(2, p) #initial values
 (_, G) = random_graph(N, 0.5)  #generate a random graph for G (the '_' we dont need, just networkx syntax)
@@ -48,7 +49,8 @@ qaoa_result = qs.QAOA_run(
     p,
     init_gamma,
     init_beta,
-    optimizer_method=optimizer_method)
+    optimizer_method=optimizer_method, 
+    optimizer_options=optimizer_options)
 
 
 #print the results 

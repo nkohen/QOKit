@@ -102,7 +102,6 @@ def spsa_for_scipy(f: Callable[[np.ndarray], float],
         x = type_check(f, x, adam, iterations, lr, lr_decay, lr_power, px, px_decay, px_power, momentum, beta, epsilon)
     except (TypeError, ValueError) as e:
         raise e.with_traceback(None)
-    adam = bool(operator.index(adam))
     iterations = operator.index(iterations)
     if lr is not None:
         lr = float(lr)
