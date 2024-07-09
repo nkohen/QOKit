@@ -1,9 +1,12 @@
 #generate a random graph
+import numpy as np
+import networkx as nx
 def random_graph(N, prob_connect = 0.7):
     A = np.random.choice([0, 1], (N, N), p=[1 - prob_connect, prob_connect])
     np.fill_diagonal(A, 0)  # No self-loops
     A = np.triu(A)  # Use only the upper triangle
     A += A.T  # Make the matrix symmetric
+    A = A.astype(float)
     return (A, nx.from_numpy_array(A))
 
 
@@ -32,3 +35,40 @@ def max_cut_terms_for_graph(G):
         optimizer_method=optimizer_method)
     '''
     return list(map((lambda edge : (-0.5, edge)), G.edges)) + [((G.number_of_edges()/2.0), ())]
+
+#adj_matrix = nx.to_numpy_array(G) is how to get numpy array of a graph 
+
+def evolve_graph(G, G_target, evolve_distance = 1):
+    '''
+    Takes as input a graph G and a target graph G_target. 
+    Both should be networkx graphs, and may be weighted. 
+    evolve_distance controls how much the graph G is changed to become more similar to G_target. 
+
+    A total of evolve_distance of edge weights of G will be modified to make it more like G_target. 
+    For example, in the unweighted case, if evolve_distance is 2, 
+    up to 2 edges in G will be added or deleted to make G match G_target. 
+    '''
+    graphs_are_equal = False #flag on whether graphs are equal, but careful of float 
+    N = len(G)
+    adj_G = nx.to_numpy_array(G, dtype = float)
+    adj_target = nx.to_numpy_array(G_target, dtype = float)
+    exit_flag = False
+    amount_evolved = 0.0
+    tol = 0.0000001 #for floating point error ==, being careful 
+    for i in range(N):
+        for j in range(N):
+            if np.abs(adj_G[i,j] - adj_target[i,j]) > tol: #this is checking != but controlling for floating point error
+                diff = adj_target[i,j] - adj_G[i,j]
+                abs_adjustment = max(np.abs(diff), evolve_distance-amount_evolved)
+                adj_G[i,j] += np.sign(diff)*abs_adjustment
+                amount_evolved += abs_adjustment
+                if np.abs(amount_evolved -evolve_distance)< tol: #this is checking == but controlling for floating point error
+                    exit_flag = True #exit if we've evolved enough
+            if exit_flag: 
+                break
+        if exit_flag:
+            break
+    fully_evolved_flag = not(exit_flag) #if we exited, then the graphs weren't approximately equal in the beginning
+    return nx.from_numpy_array(adj_G), fully_evolved_flag #returns the evolved G and flag 
+
+
