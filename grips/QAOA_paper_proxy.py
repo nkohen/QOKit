@@ -1,5 +1,8 @@
 import numpy as np
 import math
+import typing
+import time
+import scipy
 from scipy.stats import binom, multinomial
 
 """
@@ -76,3 +79,63 @@ def QAOA_paper_proxy(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraint
         expected_proxy += number_with_cost_paper_proxy(cost, num_constraints, num_qubits) * (abs(amplitude_proxies[p][cost]) ** 2) * cost
 
     return amplitude_proxies, expected_proxy
+
+def inverse_objective_function(
+    num_constraints: int,
+    num_qubits: int,
+    p: int, expectations: list[np.ndarray] | None
+) -> typing.Callable:
+    def inverse_objective(*args) -> float:
+        gamma, beta = args[0][:p], args[0][p:]
+        _, expectation = QAOA_paper_proxy(p, gamma, beta, num_constraints, num_qubits)
+        current_time = time.time()
+
+        if expectations is not None:
+            expectations.append((current_time, expectation))
+
+        return -expectation
+
+    return inverse_objective
+
+
+def QAOA_paper_proxy_run(
+    num_constraints: int,
+    num_qubits: int,
+    p: int,
+    init_gamma: np.ndarray,
+    init_beta: np.ndarray,
+    optimizer_method: str = "COBYLA",
+    optimizer_options: dict | None = None,
+    expectations: list[np.ndarray] | None = None,
+) -> dict:
+    init_freq = np.hstack([init_gamma, init_beta])
+
+    start_time = time.time()
+    result = scipy.optimize.minimize(
+        inverse_objective_function(num_constraints, num_qubits, p, expectations), init_freq, args=(), method=optimizer_method, options=optimizer_options
+    )
+    # the above returns a scipy optimization result object that has multiple attributes
+    # result.x gives the optimal solutionsol.success #bool whether algorithm succeeded
+    # result.message #message of why algorithms terminated
+    # result.nfev is number of iterations used (here, number of QAOA calls)
+    end_time = time.time()
+
+    def make_time_relative(input: tuple[float, float]) -> tuple[float, float]:
+        time, x = input
+        return (time - start_time, x)
+
+    if expectations is not None:
+        expectations = list(map(make_time_relative, expectations))
+
+    gamma, beta = result.x[:p], result.x[p:]
+    _, expectation = QAOA_paper_proxy(p, gamma, beta, num_constraints, num_qubits)
+
+    return {
+        "gamma": gamma,
+        "beta": beta,
+        "expectation": expectation,
+        "runtime": end_time - start_time,  # measured in seconds
+        "num_QAOA_calls": result.nfev, # Calls to the proxy of course
+        "classical_opt_success": result.success,
+        "scipy_opt_message": result.message,
+    }
