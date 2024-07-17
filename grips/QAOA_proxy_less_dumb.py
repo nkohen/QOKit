@@ -1,14 +1,31 @@
 import numpy as np
+import time
+import scipy
+import typing
 
 """
-This file implements a less_dumber version of the QAOA proxy algorithm for MaxCut from:
+This file implements a version of the QAOA proxy algorithm for MaxCut from:
 https://journals.aps.org/prresearch/pdf/10.1103/PhysRevResearch.6.023171
 
 But using sillier approxmations of distributions
 """
 
+
+# Gives the y-value at x=current_time on the line between (start_time, start_value) and (end_time, end_value)
+def line_between(current_time: float, start_time: float, start_value: float, end_time: float, end_value: float) -> float:
+    # Goes from 0 to 1 as current_time goes from start_time to end_time
+    relative_time = (current_time - start_time) / (end_time - start_time)
+
+    # Goes from start_value to end_value as relative_time goes from 0 to 1
+    return (1 - relative_time) * start_value + relative_time * end_value
+
+
+#             /\height
+#            /  \
+# _ _ _ left/    \right _ _ _ given x, returns the corresponding y value on the preceeding curve
 def triangle_value(x: int, left: int, right: int, height: float) -> float:
-    return max(0, min(x - left, right - x)*2*height/(right - left))
+    return max(0, min(x - left, right - x) * 2 * height / (right - left))
+
 
 # P(c') from paper but dumber
 def prob_cost_less_dumb(cost: int, num_constraints: int) -> float:
@@ -21,19 +38,24 @@ def number_with_cost_proxy_less_dumb(cost: int, num_constraints: int, num_qubits
     return prob_cost_less_dumb(cost, num_constraints) * scale
 
 
-# N(c'; d, c) from paper but dumber
-def number_of_costs_at_distance_proxy_less_dumb(cost_1: int, cost_2: int, distance: int, num_constraints: int, num_qubits: int, prob_edge: float = 0.5) -> float:
+# N(c'; d, c) from paper but instead of a multinomial distribution, we just approximate by a prism whose cross-sections at fixed distances are triangles
+def number_of_costs_at_distance_proxy_less_dumb(
+    cost_1: int, cost_2: int, distance: int, num_constraints: int, num_qubits: int, prob_edge: float = 0.5
+) -> float:
+    # Want distance to be between 0 and num_qubits//2 since further distance corresponds to being near the bitwise complement (which has the same cost)
     reflected_distance = distance
-    if (distance > num_qubits//2):
+    if distance > num_qubits // 2:
         reflected_distance = num_qubits - distance
 
-    # Go between height 1 and QAOA_proxy.number_of_costs_at_distance_proxy(num_constraints//2, num_constraints//2, num_qubits//2, num_constraints, num_qubits) centered at cost_1 and num_constraints/2 respectively from distance 0 to num_qubits/2 respectively
-    # TODO: replace h_peak with something faster to compute
-    h_peak = 1 << (num_qubits-4)
-    h_at_cost_2 = 1 + 2*reflected_distance*(h_peak - 1)/num_qubits
-    center = (reflected_distance/(num_qubits//2))*num_constraints//2 + (1-reflected_distance/(num_qubits//2))*cost_1
+    # Approximate the peak value of the paper's multinomial distribution (roughly)
+    h_peak = 1 << (num_qubits - 4)
+    # Take the peak height at reflected_distance to be on the straight line between (0 or num_qubits, 1) and (num_qubits/2, h_peak)
+    h_at_cost_2 = line_between(reflected_distance, 0, 1, num_qubits / 2, h_peak)
+    # Let the peak height at reflected_distance occur where cost_2 is on the stright line between cost_1 and num_constraints/2
+    center = line_between(reflected_distance, 0, cost_1, num_qubits / 2, num_constraints / 2)
     left = center - reflected_distance - 1
     right = center + reflected_distance + 1
+    
     return triangle_value(cost_2, left, right, h_at_cost_2)
 
 
@@ -71,3 +93,63 @@ def QAOA_proxy_less_dumb(p: int, gamma: np.ndarray, beta: np.ndarray, num_constr
         expected_proxy += number_with_cost_proxy_less_dumb(cost, num_constraints, num_qubits) * (abs(amplitude_proxies[p][cost]) ** 2) * cost
 
     return amplitude_proxies, expected_proxy
+
+def inverse_objective_function(
+    num_constraints: int,
+    num_qubits: int,
+    p: int, expectations: list[np.ndarray] | None
+) -> typing.Callable:
+    def inverse_objective(*args) -> float:
+        gamma, beta = args[0][:p], args[0][p:]
+        _, expectation = QAOA_proxy_less_dumb(p, gamma, beta, num_constraints, num_qubits)
+        current_time = time.time()
+
+        if expectations is not None:
+            expectations.append((current_time, expectation))
+
+        return -expectation
+
+    return inverse_objective
+
+
+def QAOA_proxy_run(
+    num_constraints: int,
+    num_qubits: int,
+    p: int,
+    init_gamma: np.ndarray,
+    init_beta: np.ndarray,
+    optimizer_method: str = "COBYLA",
+    optimizer_options: dict | None = None,
+    expectations: list[np.ndarray] | None = None,
+) -> dict:
+    init_freq = np.hstack([init_gamma, init_beta])
+
+    start_time = time.time()
+    result = scipy.optimize.minimize(
+        inverse_objective_function(num_constraints, num_qubits, p, expectations), init_freq, args=(), method=optimizer_method, options=optimizer_options
+    )
+    # the above returns a scipy optimization result object that has multiple attributes
+    # result.x gives the optimal solutionsol.success #bool whether algorithm succeeded
+    # result.message #message of why algorithms terminated
+    # result.nfev is number of iterations used (here, number of QAOA calls)
+    end_time = time.time()
+
+    def make_time_relative(input: tuple[float, float]) -> tuple[float, float]:
+        time, x = input
+        return (time - start_time, x)
+
+    if expectations is not None:
+        expectations = list(map(make_time_relative, expectations))
+
+    gamma, beta = result.x[:p], result.x[p:]
+    _, expectation = QAOA_proxy_less_dumb(p, gamma, beta, num_constraints, num_qubits)
+
+    return {
+        "gamma": gamma,
+        "beta": beta,
+        "expectation": expectation,
+        "runtime": end_time - start_time,  # measured in seconds
+        "num_QAOA_calls": result.nfev,
+        "classical_opt_success": result.success,
+        "scipy_opt_message": result.message,
+    }
