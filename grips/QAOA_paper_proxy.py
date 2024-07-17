@@ -80,11 +80,8 @@ def QAOA_paper_proxy(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraint
 
     return amplitude_proxies, expected_proxy
 
-def inverse_objective_function(
-    num_constraints: int,
-    num_qubits: int,
-    p: int, expectations: list[np.ndarray] | None
-) -> typing.Callable:
+
+def inverse_paper_proxy_objective_function(num_constraints: int, num_qubits: int, p: int, expectations: list[np.ndarray] | None) -> typing.Callable:
     def inverse_objective(*args) -> float:
         gamma, beta = args[0][:p], args[0][p:]
         _, expectation = QAOA_paper_proxy(p, gamma, beta, num_constraints, num_qubits)
@@ -112,7 +109,11 @@ def QAOA_paper_proxy_run(
 
     start_time = time.time()
     result = scipy.optimize.minimize(
-        inverse_objective_function(num_constraints, num_qubits, p, expectations), init_freq, args=(), method=optimizer_method, options=optimizer_options
+        inverse_paper_proxy_objective_function(num_constraints, num_qubits, p, expectations),
+        init_freq,
+        args=(),
+        method=optimizer_method,
+        options=optimizer_options,
     )
     # the above returns a scipy optimization result object that has multiple attributes
     # result.x gives the optimal solutionsol.success #bool whether algorithm succeeded
@@ -135,7 +136,7 @@ def QAOA_paper_proxy_run(
         "beta": beta,
         "expectation": expectation,
         "runtime": end_time - start_time,  # measured in seconds
-        "num_QAOA_calls": result.nfev, # Calls to the proxy of course
+        "num_QAOA_calls": result.nfev,  # Calls to the proxy of course
         "classical_opt_success": result.success,
         "scipy_opt_message": result.message,
     }

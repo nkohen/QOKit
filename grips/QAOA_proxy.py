@@ -39,9 +39,8 @@ def number_with_cost_proxy(cost: int, num_constraints: int, num_qubits: int) -> 
 
 
 # N(c'; d, c) from paper but instead of a multinomial distribution, we just approximate by a prism whose cross-sections at fixed distances are triangles
-def number_of_costs_at_distance_proxy(
-    cost_1: int, cost_2: int, distance: int, num_constraints: int, num_qubits: int, prob_edge: float = 0.5
-) -> float:
+# TODO: This only works for prob_edge = 0.5
+def number_of_costs_at_distance_proxy(cost_1: int, cost_2: int, distance: int, num_constraints: int, num_qubits: int) -> float:
     # Want distance to be between 0 and num_qubits//2 since further distance corresponds to being near the bitwise complement (which has the same cost)
     reflected_distance = distance
     if distance > num_qubits // 2:
@@ -55,7 +54,7 @@ def number_of_costs_at_distance_proxy(
     center = line_between(reflected_distance, 0, cost_1, num_qubits / 2, num_constraints / 2)
     left = center - reflected_distance - 1
     right = center + reflected_distance + 1
-    
+
     return triangle_value(cost_2, left, right, h_at_cost_2)
 
 
@@ -94,11 +93,8 @@ def QAOA_proxy(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraints: int
 
     return amplitude_proxies, expected_proxy
 
-def inverse_objective_function(
-    num_constraints: int,
-    num_qubits: int,
-    p: int, expectations: list[np.ndarray] | None
-) -> typing.Callable:
+
+def inverse_proxy_objective_function(num_constraints: int, num_qubits: int, p: int, expectations: list[np.ndarray] | None) -> typing.Callable:
     def inverse_objective(*args) -> float:
         gamma, beta = args[0][:p], args[0][p:]
         _, expectation = QAOA_proxy(p, gamma, beta, num_constraints, num_qubits)
@@ -111,7 +107,7 @@ def inverse_objective_function(
 
     return inverse_objective
 
-
+# Currently only implemented for prob_edge = 0.5
 def QAOA_proxy_run(
     num_constraints: int,
     num_qubits: int,
@@ -126,7 +122,7 @@ def QAOA_proxy_run(
 
     start_time = time.time()
     result = scipy.optimize.minimize(
-        inverse_objective_function(num_constraints, num_qubits, p, expectations), init_freq, args=(), method=optimizer_method, options=optimizer_options
+        inverse_proxy_objective_function(num_constraints, num_qubits, p, expectations), init_freq, args=(), method=optimizer_method, options=optimizer_options
     )
     # the above returns a scipy optimization result object that has multiple attributes
     # result.x gives the optimal solutionsol.success #bool whether algorithm succeeded
@@ -149,7 +145,7 @@ def QAOA_proxy_run(
         "beta": beta,
         "expectation": expectation,
         "runtime": end_time - start_time,  # measured in seconds
-        "num_QAOA_calls": result.nfev, # Calls to the proxy of course
+        "num_QAOA_calls": result.nfev,  # Calls to the proxy of course
         "classical_opt_success": result.success,
         "scipy_opt_message": result.message,
     }
