@@ -37,12 +37,17 @@ def prob_common_at_distance_paper(num_constraints: int, common_constraints: int,
 
 # N(c'; d, c) from paper
 def number_of_costs_at_distance_paper_proxy(cost_1: int, cost_2: int, distance: int, num_constraints: int, num_qubits: int, prob_edge: float = 0.5) -> float:
+    # Want distance to be between 0 and num_qubits//2 since further distance corresponds to being near the bitwise complement (which has the same cost)
+    reflected_distance = distance
+    if distance > num_qubits // 2:
+        reflected_distance = num_qubits - distance
+    
     sum = 0
     for common_constraints in range(max(0, cost_1 + cost_2 - num_constraints), min(cost_1, cost_2) + 1):
-        sum += prob_common_at_distance_paper(num_constraints, common_constraints, cost_1, cost_2, distance)
+        sum += prob_common_at_distance_paper(num_constraints, common_constraints, cost_1, cost_2, reflected_distance)
 
     p_cost = prob_cost_paper(cost_1, num_constraints, prob_edge)
-    return (math.comb(num_qubits, distance) / p_cost) * sum
+    return (math.comb(num_qubits, reflected_distance) / p_cost) * sum
 
 
 # Computes the sum inside the for loop of Algorithm 1 in paper
