@@ -41,21 +41,28 @@ def number_with_cost_proxy(cost: int, num_constraints: int, num_qubits: int) -> 
 # N(c'; d, c) from paper but instead of a multinomial distribution, we just approximate by a prism whose cross-sections at fixed distances are triangles
 # TODO: This only works for prob_edge = 0.5
 def number_of_costs_at_distance_proxy(cost_1: int, cost_2: int, distance: int, num_constraints: int, num_qubits: int) -> float:
-    # Want distance to be between 0 and num_qubits//2 since further distance corresponds to being near the bitwise complement (which has the same cost)
-    reflected_distance = distance
-    if distance > num_qubits // 2:
-        reflected_distance = num_qubits - distance
-
     # Approximate the peak value of the paper's multinomial distribution (roughly)
     h_peak = 1 << (num_qubits - 4)
-    # Take the peak height at reflected_distance to be on the straight line between (0 or num_qubits, 1) and (num_qubits/2, h_peak)
-    h_at_cost_2 = line_between(reflected_distance, 0, 1, num_qubits / 2, h_peak)
-    # Let the peak height at reflected_distance occur where cost_2 is on the stright line between cost_1 and num_constraints/2
-    center = line_between(reflected_distance, 0, cost_1, num_qubits / 2, num_constraints / 2)
-    left = center - reflected_distance - 1
-    right = center + reflected_distance + 1
 
-    return triangle_value(cost_2, left, right, h_at_cost_2)
+    if (distance > num_qubits // 2):
+        # Take the peak height at reflected_distance to be on the straight line between (0 or num_qubits, 1) and (num_qubits/2, h_peak)
+        h_at_cost_2 = line_between(distance, num_qubits / 2, h_peak, num_qubits, 0)
+        # Let the peak height at reflected_distance occur where cost_2 is on the stright line between cost_1 and num_constraints/2
+        center = num_constraints / 2
+        reflected_distance = num_qubits - distance
+        left = center - reflected_distance - 1
+        right = center + reflected_distance + 1
+
+        return triangle_value(cost_2, left, right, h_at_cost_2)
+    else:
+        # Take the peak height at reflected_distance to be on the straight line between (0 or num_qubits, 1) and (num_qubits/2, h_peak)
+        h_at_cost_2 = line_between(distance, 0, 1, num_qubits / 2, h_peak)
+        # Let the peak height at reflected_distance occur where cost_2 is on the stright line between cost_1 and num_constraints/2
+        center = line_between(distance, 0, cost_1, num_qubits / 2, num_constraints / 2)
+        left = center - distance - 1
+        right = center + distance + 1
+
+        return triangle_value(cost_2, left, right, h_at_cost_2)
 
 
 # Computes the sum inside the for loop of Algorithm 1 in paper using dumb approximations
