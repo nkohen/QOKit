@@ -84,10 +84,10 @@ def number_of_costs_at_distance_proxy(
     distance: int,
     num_constraints: int,
     num_qubits: int,
-    h_tweak_sub: float,
-    hc_tweak_add: float,
-    l_tweak_mul: float,
-    r_tweak_mul: float,
+    h_tweak_sub: float, # Shifts the peak of the pyramid down (Default 0)
+    hc_tweak_add: float, # Moves the cost_2 of the peak to the right (Default 0)
+    l_tweak_mul: float, # Defines the (inverse of the) slope of the left side of the pyramid (Default 1)
+    r_tweak_mul: float, # Defines the (inverse of the) slope of the right side of the pyramid (Default 1)
 ) -> float:
     # Want distance to be between 0 and num_qubits//2 since further distance corresponds to being near the bitwise complement (which has the same cost)
     reflected_distance = distance
@@ -277,76 +277,3 @@ def QAOA_proxy_run(
 #print("QAOA_proxy ", QAOA_proxy(p, gamma_vec, beta_vec, num_constraints, num_qubits, terms_to_drop_in_expectation))
 #end = time.time()
 #print("Elapsed time: ", end-start)
-
-from qokit.fur.qaoa_simulator_base import TermsType
-from QAOA_simulator import get_expectation
-
-
-def QAOA_proxy_optimize(
-    num_constraints: int,
-    num_qubits: int,
-    ising_model: TermsType,
-    p: int,
-    init_gamma: np.ndarray,
-    init_beta: np.ndarray,
-    optimizer_method: str = "COBYLA",
-    optimizer_options: dict | None = None,
-    init_h_tweak: float = 0,
-    init_hc_tweak: float = 0,
-    init_l_tweak: float = 1,
-    init_r_tweak: float = 1,
-) -> tuple[float, float, float]:
-
-    def iof(*args) -> float:
-        h, hc, l, r = args[0][0], args[0][1], args[0][2], args[0][3]
-        result = QAOA_proxy_run(num_constraints, num_qubits, p, init_gamma, init_beta, optimizer_method, optimizer_options, None, h, hc, l, r)
-        return -get_expectation(num_qubits, ising_model, result["gamma"], result["beta"])
-
-    init_freq = np.hstack([init_h_tweak, init_hc_tweak, init_l_tweak, init_r_tweak])
-    result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(None, 1 << (num_qubits - 4)), (None, None), (0, None), (0, None)])
-    return result.x[0], result.x[1], result.x[2], result.x[3]
-
-def QAOA_proxy_optimize_lr(
-    num_constraints: int,
-    num_qubits: int,
-    ising_model: TermsType,
-    p: int,
-    init_gamma: np.ndarray,
-    init_beta: np.ndarray,
-    optimizer_method: str = "COBYLA",
-    optimizer_options: dict | None = None,
-    init_l_tweak: float = 1,
-    init_r_tweak: float = 1,
-) -> tuple[float, float, float]:
-
-    def iof(*args) -> float:
-        l, r = args[0][0], args[0][1]
-        result = QAOA_proxy_run(num_constraints, num_qubits, p, init_gamma, init_beta, optimizer_method, optimizer_options, None, l_tweak_mul=l, r_tweak_mul=r)
-        return -get_expectation(num_qubits, ising_model, result["gamma"], result["beta"])
-
-    init_freq = np.hstack([init_l_tweak, init_r_tweak])
-    result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(0, None), (0, None)])
-    return result.x[0], result.x[1]
-
-def QAOA_proxy_optimize_no_h(
-    num_constraints: int,
-    num_qubits: int,
-    ising_model: TermsType,
-    p: int,
-    init_gamma: np.ndarray,
-    init_beta: np.ndarray,
-    optimizer_method: str = "COBYLA",
-    optimizer_options: dict | None = None,
-    init_hc_tweak: float = 0,
-    init_l_tweak: float = 1,
-    init_r_tweak: float = 1,
-) -> tuple[float, float, float]:
-
-    def iof(*args) -> float:
-        hc, l, r = args[0][0], args[0][1], args[0][2]
-        result = QAOA_proxy_run(num_constraints, num_qubits, p, init_gamma, init_beta, optimizer_method, optimizer_options, None, hc_tweak_add=hc, l_tweak_mul=l, r_tweak_mul=r)
-        return -get_expectation(num_qubits, ising_model, result["gamma"], result["beta"])
-
-    init_freq = np.hstack([init_hc_tweak, init_l_tweak, init_r_tweak])
-    result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(None, None), (0, None), (0, None)])
-    return result.x[0], result.x[1], result.x[2]
