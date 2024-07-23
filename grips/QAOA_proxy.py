@@ -78,34 +78,58 @@ def number_with_cost_proxy(cost: int, num_constraints: int, num_qubits: int) -> 
 # N(c'; d, c) from paper but instead of a multinomial distribution, we just approximate by a prism whose cross-sections at fixed distances are triangles
 # TODO: This only works for prob_edge = 0.5
 @njit
-def number_of_costs_at_distance_proxy(cost_1: int, cost_2: int, distance: int, num_constraints: int, num_qubits: int) -> float:
+def number_of_costs_at_distance_proxy(
+    cost_1: int,
+    cost_2: int,
+    distance: int,
+    num_constraints: int,
+    num_qubits: int,
+    h_tweak_sub: float,
+    hc_tweak_add: float,
+    l_tweak_mul: float,
+    r_tweak_mul: float,
+) -> float:
     # Want distance to be between 0 and num_qubits//2 since further distance corresponds to being near the bitwise complement (which has the same cost)
     reflected_distance = distance
     if distance > num_qubits // 2:
         reflected_distance = num_qubits - distance
 
     # Approximate the peak value of the paper's multinomial distribution (roughly)
-    h_peak = 1 << (num_qubits - 4)
+    h_peak = (1 << (num_qubits - 4)) - h_tweak_sub
+    center_at_h_peak = num_constraints / 2 + hc_tweak_add
     # Take the peak height at reflected_distance to be on the straight line between (0 or num_qubits, 1) and (num_qubits/2, h_peak)
     h_at_cost_2 = line_between(reflected_distance, 0, 1, num_qubits / 2, h_peak)
     # Let the peak height at reflected_distance occur where cost_2 is on the stright line between cost_1 and num_constraints/2
-    center = line_between(reflected_distance, 0, cost_1, num_qubits / 2, num_constraints / 2)
-    left = center - reflected_distance - 1
-    right = center + reflected_distance + 1
+    center = line_between(reflected_distance, 0, cost_1, num_qubits / 2, center_at_h_peak)
+    left = center - l_tweak_mul * reflected_distance - 1
+    right = center + r_tweak_mul * reflected_distance + 1
 
     return triangle_value(cost_2, left, right, h_at_cost_2)
 
 
 # Computes the sum inside the for loop of Algorithm 1 in paper using dumb approximations
 @njit
-def compute_amplitude_sum(prev_amplitudes: np.ndarray, gamma: float, beta: float, cost_1: int, num_constraints: int, num_qubits: int) -> complex:
+def compute_amplitude_sum(
+    prev_amplitudes: np.ndarray,
+    gamma: float,
+    beta: float,
+    cost_1: int,
+    num_constraints: int,
+    num_qubits: int,
+    h_tweak_sub: float,
+    hc_tweak_add: float,
+    l_tweak_mul: float,
+    r_tweak_mul: float,
+) -> complex:
     sum = 0
     for cost_2 in range(num_constraints + 1):
         for distance in range(num_qubits + 1):
             # Should I np-ify all of the stuff here?
             beta_factor = (np.cos(beta) ** (num_qubits - distance)) * ((-1j * np.sin(beta)) ** distance)
             gamma_factor = np.exp(-1j * gamma * cost_2)
-            num_costs_at_distance = number_of_costs_at_distance_proxy(cost_1, cost_2, distance, num_constraints, num_qubits)
+            num_costs_at_distance = number_of_costs_at_distance_proxy(
+                cost_1, cost_2, distance, num_constraints, num_qubits, h_tweak_sub, hc_tweak_add, l_tweak_mul, r_tweak_mul
+            )
             sum += beta_factor * gamma_factor * prev_amplitudes[cost_2] * num_costs_at_distance
     return sum
 
@@ -114,9 +138,22 @@ def compute_amplitude_sum(prev_amplitudes: np.ndarray, gamma: float, beta: float
 # Algorithm 1 from paper using dumb approximations
 # num_constraints = number of edges, and num_qubits = number of vertices
 @njit
-def QAOA_proxy_python(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraints: int, num_qubits: int, terms_to_drop_in_expectation: int = 0):
+def QAOA_proxy_python(
+    p: int,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    num_constraints: int,
+    num_qubits: int,
+    h_tweak_sub: float,
+    hc_tweak_add: float,
+    l_tweak_mul: float,
+    r_tweak_mul: float,
+    terms_to_drop_in_expectation: int = 0,
+):
     num_costs = num_constraints + 1
-    amplitude_proxies = np.zeros((p + 1, num_costs), dtype=np.complex128) # (p+1, num_costs) needs to be a tuple, not a list, in order to play nicely with numba. Also, dtype must be made more concrete (complex128 instead of complex)
+    amplitude_proxies = np.zeros(
+        (p + 1, num_costs), dtype=np.complex128
+    )  # (p+1, num_costs) needs to be a tuple, not a list, in order to play nicely with numba. Also, dtype must be made more concrete (complex128 instead of complex)
     init_amplitude = np.sqrt(1 / (1 << num_qubits))
     for i in range(num_costs):
         amplitude_proxies[0][i] = init_amplitude
@@ -124,7 +161,16 @@ def QAOA_proxy_python(p: int, gamma: np.ndarray, beta: np.ndarray, num_constrain
     for current_depth in range(1, p + 1):
         for cost_1 in range(num_costs):
             amplitude_proxies[current_depth][cost_1] = compute_amplitude_sum(
-                amplitude_proxies[current_depth - 1], gamma[current_depth - 1], beta[current_depth - 1], cost_1, num_constraints, num_qubits
+                amplitude_proxies[current_depth - 1],
+                gamma[current_depth - 1],
+                beta[current_depth - 1],
+                cost_1,
+                num_constraints,
+                num_qubits,
+                h_tweak_sub,
+                hc_tweak_add,
+                l_tweak_mul,
+                r_tweak_mul,
             )
 
     expected_proxy = 0
@@ -134,11 +180,19 @@ def QAOA_proxy_python(p: int, gamma: np.ndarray, beta: np.ndarray, num_constrain
     return amplitude_proxies, expected_proxy
 
 
-
-def inverse_proxy_objective_function(num_constraints: int, num_qubits: int, p: int, expectations: list[np.ndarray] | None) -> typing.Callable:
+def inverse_proxy_objective_function(
+    num_constraints: int,
+    num_qubits: int,
+    p: int,
+    expectations: list[np.ndarray] | None,
+    h_tweak_sub: float,
+    hc_tweak_add: float,
+    l_tweak_mul: float,
+    r_tweak_mul: float,
+) -> typing.Callable:
     def inverse_objective(*args) -> float:
         gamma, beta = args[0][:p], args[0][p:]
-        _, expectation = QAOA_proxy(p, gamma, beta, num_constraints, num_qubits)
+        _, expectation = QAOA_proxy(p, gamma, beta, num_constraints, num_qubits, h_tweak_sub, hc_tweak_add, l_tweak_mul, r_tweak_mul)
         current_time = time.time()
 
         if expectations is not None:
@@ -158,12 +212,20 @@ def QAOA_proxy_run(
     optimizer_method: str = "COBYLA",
     optimizer_options: dict | None = None,
     expectations: list[np.ndarray] | None = None,
+    h_tweak_sub: float = 0,
+    hc_tweak_add: float = 0,
+    l_tweak_mul: float = 1,
+    r_tweak_mul: float = 1,
 ) -> dict:
     init_freq = np.hstack([init_gamma, init_beta])
 
     start_time = time.time()
     result = scipy.optimize.minimize(
-        inverse_proxy_objective_function(num_constraints, num_qubits, p, expectations), init_freq, args=(), method=optimizer_method, options=optimizer_options
+        inverse_proxy_objective_function(num_constraints, num_qubits, p, expectations, h_tweak_sub, hc_tweak_add, l_tweak_mul, r_tweak_mul),
+        init_freq,
+        args=(),
+        method=optimizer_method,
+        options=optimizer_options,
     )
     # the above returns a scipy optimization result object that has multiple attributes
     # result.x gives the optimal solutionsol.success #bool whether algorithm succeeded
@@ -179,7 +241,7 @@ def QAOA_proxy_run(
         expectations = list(map(make_time_relative, expectations))
 
     gamma, beta = result.x[:p], result.x[p:]
-    _, expectation = QAOA_proxy(p, gamma, beta, num_constraints, num_qubits)
+    _, expectation = QAOA_proxy(p, gamma, beta, num_constraints, num_qubits, h_tweak_sub, hc_tweak_add, l_tweak_mul, r_tweak_mul)
 
     return {
         "gamma": gamma,
@@ -215,3 +277,76 @@ def QAOA_proxy_run(
 #print("QAOA_proxy ", QAOA_proxy(p, gamma_vec, beta_vec, num_constraints, num_qubits, terms_to_drop_in_expectation))
 #end = time.time()
 #print("Elapsed time: ", end-start)
+
+from qokit.fur.qaoa_simulator_base import TermsType
+from QAOA_simulator import get_expectation
+
+
+def QAOA_proxy_optimize(
+    num_constraints: int,
+    num_qubits: int,
+    ising_model: TermsType,
+    p: int,
+    init_gamma: np.ndarray,
+    init_beta: np.ndarray,
+    optimizer_method: str = "COBYLA",
+    optimizer_options: dict | None = None,
+    init_h_tweak: float = 0,
+    init_hc_tweak: float = 0,
+    init_l_tweak: float = 1,
+    init_r_tweak: float = 1,
+) -> tuple[float, float, float]:
+
+    def iof(*args) -> float:
+        h, hc, l, r = args[0][0], args[0][1], args[0][2], args[0][3]
+        result = QAOA_proxy_run(num_constraints, num_qubits, p, init_gamma, init_beta, optimizer_method, optimizer_options, None, h, hc, l, r)
+        return -get_expectation(num_qubits, ising_model, result["gamma"], result["beta"])
+
+    init_freq = np.hstack([init_h_tweak, init_hc_tweak, init_l_tweak, init_r_tweak])
+    result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(None, 1 << (num_qubits - 4)), (None, None), (0, None), (0, None)])
+    return result.x[0], result.x[1], result.x[2], result.x[3]
+
+def QAOA_proxy_optimize_lr(
+    num_constraints: int,
+    num_qubits: int,
+    ising_model: TermsType,
+    p: int,
+    init_gamma: np.ndarray,
+    init_beta: np.ndarray,
+    optimizer_method: str = "COBYLA",
+    optimizer_options: dict | None = None,
+    init_l_tweak: float = 1,
+    init_r_tweak: float = 1,
+) -> tuple[float, float, float]:
+
+    def iof(*args) -> float:
+        l, r = args[0][0], args[0][1]
+        result = QAOA_proxy_run(num_constraints, num_qubits, p, init_gamma, init_beta, optimizer_method, optimizer_options, None, l_tweak_mul=l, r_tweak_mul=r)
+        return -get_expectation(num_qubits, ising_model, result["gamma"], result["beta"])
+
+    init_freq = np.hstack([init_l_tweak, init_r_tweak])
+    result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(0, None), (0, None)])
+    return result.x[0], result.x[1]
+
+def QAOA_proxy_optimize_no_h(
+    num_constraints: int,
+    num_qubits: int,
+    ising_model: TermsType,
+    p: int,
+    init_gamma: np.ndarray,
+    init_beta: np.ndarray,
+    optimizer_method: str = "COBYLA",
+    optimizer_options: dict | None = None,
+    init_hc_tweak: float = 0,
+    init_l_tweak: float = 1,
+    init_r_tweak: float = 1,
+) -> tuple[float, float, float]:
+
+    def iof(*args) -> float:
+        hc, l, r = args[0][0], args[0][1], args[0][2]
+        result = QAOA_proxy_run(num_constraints, num_qubits, p, init_gamma, init_beta, optimizer_method, optimizer_options, None, hc_tweak_add=hc, l_tweak_mul=l, r_tweak_mul=r)
+        return -get_expectation(num_qubits, ising_model, result["gamma"], result["beta"])
+
+    init_freq = np.hstack([init_hc_tweak, init_l_tweak, init_r_tweak])
+    result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(None, None), (0, None), (0, None)])
+    return result.x[0], result.x[1], result.x[2]
