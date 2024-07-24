@@ -94,7 +94,9 @@ def compute_amplitude_sum(prev_amplitudes: np.ndarray, gamma: float, beta: float
 @njit
 def QAOA_proxy_python(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraints: int, num_qubits: int, terms_to_drop_in_expectation: int = 0):
     num_costs = num_constraints + 1
-    amplitude_proxies = np.zeros((p + 1, num_costs), dtype=np.complex128) # (p+1, num_costs) needs to be a tuple, not a list, in order to play nicely with numba. Also, dtype must be made more concrete (complex128 instead of complex)
+    amplitude_proxies = np.zeros(
+        (p + 1, num_costs), dtype=np.complex128
+    )  # (p+1, num_costs) needs to be a tuple, not a list, in order to play nicely with numba. Also, dtype must be made more concrete (complex128 instead of complex)
     init_amplitude = np.sqrt(1 / (1 << num_qubits))
     for i in range(num_costs):
         amplitude_proxies[0][i] = init_amplitude
@@ -118,10 +120,12 @@ def QAOA_proxy(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraints: int
     return jl.QAOA_proxy(p, gamma, beta, num_constraints, num_qubits, terms_to_drop_in_expectation)
 
 
-def inverse_proxy_objective_function(num_constraints: int, num_qubits: int, p: int, expectations: list[np.ndarray] | None) -> typing.Callable:
+def inverse_proxy_objective_function(
+    num_constraints: int, num_qubits: int, p: int, expectations: list[np.ndarray] | None, terms_to_drop_in_expectation: int
+) -> typing.Callable:
     def inverse_objective(*args) -> float:
         gamma, beta = args[0][:p], args[0][p:]
-        _, expectation = QAOA_proxy(p, gamma, beta, num_constraints, num_qubits)
+        _, expectation = QAOA_proxy(p, gamma, beta, num_constraints, num_qubits, terms_to_drop_in_expectation)
         current_time = time.time()
 
         if expectations is not None:
@@ -131,6 +135,7 @@ def inverse_proxy_objective_function(num_constraints: int, num_qubits: int, p: i
 
     return inverse_objective
 
+
 # Currently only implemented for prob_edge = 0.5
 def QAOA_proxy_run(
     num_constraints: int,
@@ -138,6 +143,7 @@ def QAOA_proxy_run(
     p: int,
     init_gamma: np.ndarray,
     init_beta: np.ndarray,
+    terms_to_drop_in_expectation: int = 0,
     optimizer_method: str = "COBYLA",
     optimizer_options: dict | None = None,
     expectations: list[np.ndarray] | None = None,
@@ -146,7 +152,11 @@ def QAOA_proxy_run(
 
     start_time = time.time()
     result = scipy.optimize.minimize(
-        inverse_proxy_objective_function(num_constraints, num_qubits, p, expectations), init_freq, args=(), method=optimizer_method, options=optimizer_options
+        inverse_proxy_objective_function(num_constraints, num_qubits, p, expectations, terms_to_drop_in_expectation),
+        init_freq,
+        args=(),
+        method=optimizer_method,
+        options=optimizer_options,
     )
     # the above returns a scipy optimization result object that has multiple attributes
     # result.x gives the optimal solutionsol.success #bool whether algorithm succeeded
