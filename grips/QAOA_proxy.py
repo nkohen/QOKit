@@ -6,29 +6,45 @@ import typing
 import os
 import warnings
 
+
 # Define a custom warning category
 class JuliaWarning(Warning):
     pass
+
+
 # Configure the warnings to show each custom warning only once per session
 warnings.filterwarnings("once", category=JuliaWarning)
 
 
-USE_JULIA=True
+USE_JULIA = False
 if USE_JULIA:
     from juliacall import Main as jl
+
     dir_path = os.path.dirname(os.path.realpath(__file__))
     jl.seval(f'include("{dir_path}/QAOA_proxy.jl")')
-
+else:
+    warnings.warn("USE_JULIA=False, so calling python version of QAOA_proxy. Did you mean to call QAOA_proxy_python?", JuliaWarning)
 """
 Julia version
 """
-def QAOA_proxy(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraints: int, num_qubits: int, terms_to_drop_in_expectation: int = 0):
+
+
+def QAOA_proxy(
+    p: int,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    num_constraints: int,
+    num_qubits: int,
+    h_tweak_sub: float,
+    hc_tweak_add: float,
+    l_tweak_mul: float,
+    r_tweak_mul: float,
+    terms_to_drop_in_expectation: int = 0,
+):
     if USE_JULIA:
         return jl.QAOA_proxy(p, gamma, beta, num_constraints, num_qubits, terms_to_drop_in_expectation)
     else:
-        warnings.warn("USE_JULIA=False, so calling python version of QAOA_proxy. Did you mean to call QAOA_proxy_python?", JuliaWarning)
-        return QAOA_proxy_python(p, gamma, beta, num_constraints, num_qubits, terms_to_drop_in_expectation)
-
+        return QAOA_proxy_python(p, gamma, beta, num_constraints, num_qubits, h_tweak_sub, hc_tweak_add, l_tweak_mul, r_tweak_mul, terms_to_drop_in_expectation)
 
 
 """
@@ -43,6 +59,7 @@ But using direct linear approxmations of distributions
 ### implementations instead of the python ones. So most of the functions in this
 ### file will never be called. But they can be called using QAOA_proxy_python
 ###
+
 
 # Gives the y-value at x=current_time on the line between (start_time, start_value) and (end_time, end_value)
 @njit
@@ -84,10 +101,10 @@ def number_of_costs_at_distance_proxy(
     distance: int,
     num_constraints: int,
     num_qubits: int,
-    h_tweak_sub: float, # Shifts the peak of the pyramid down (Default 0)
-    hc_tweak_add: float, # Moves the cost_2 of the peak to the right (Default 0)
-    l_tweak_mul: float, # Defines the (inverse of the) slope of the left side of the pyramid (Default 1)
-    r_tweak_mul: float, # Defines the (inverse of the) slope of the right side of the pyramid (Default 1)
+    h_tweak_sub: float,  # Shifts the peak of the pyramid down (Default 0)
+    hc_tweak_add: float,  # Moves the cost_2 of the peak to the right (Default 0)
+    l_tweak_mul: float,  # Defines the (inverse of the) slope of the left side of the pyramid (Default 1)
+    r_tweak_mul: float,  # Defines the (inverse of the) slope of the right side of the pyramid (Default 1)
 ) -> float:
     # Want distance to be between 0 and num_qubits//2 since further distance corresponds to being near the bitwise complement (which has the same cost)
     reflected_distance = distance
@@ -202,6 +219,7 @@ def inverse_proxy_objective_function(
 
     return inverse_objective
 
+
 # Currently only implemented for prob_edge = 0.5
 def QAOA_proxy_run(
     num_constraints: int,
@@ -253,27 +271,28 @@ def QAOA_proxy_run(
         "scipy_opt_message": result.message,
     }
 
-#cost = 1
-#num_constraints = 21
-#prob_edge = 0.4
-#cost_1 = 1
-#cost_2 = 2
-#distance = 1
-#num_qubits = 10
-#common_constraints = 3
-#prev_amplitudes = np.full(22, 1/1000, dtype=complex)
-#gamma = 0.5
-#beta = 0.6
-#p = 4
-#gamma_vec = np.ones(4)
-#beta_vec = np.ones(4)
-#terms_to_drop_in_expectation = 1
+
+# cost = 1
+# num_constraints = 21
+# prob_edge = 0.4
+# cost_1 = 1
+# cost_2 = 2
+# distance = 1
+# num_qubits = 10
+# common_constraints = 3
+# prev_amplitudes = np.full(22, 1/1000, dtype=complex)
+# gamma = 0.5
+# beta = 0.6
+# p = 4
+# gamma_vec = np.ones(4)
+# beta_vec = np.ones(4)
+# terms_to_drop_in_expectation = 1
 #
-#start = time.time()
-#print("QAOA_proxy ", QAOA_proxy(p, gamma_vec, beta_vec, num_constraints, num_qubits, terms_to_drop_in_expectation))
-#end = time.time()
-#print("Elapsed time: ", end-start)
-#start = time.time()
-#print("QAOA_proxy ", QAOA_proxy(p, gamma_vec, beta_vec, num_constraints, num_qubits, terms_to_drop_in_expectation))
-#end = time.time()
-#print("Elapsed time: ", end-start)
+# start = time.time()
+# print("QAOA_proxy ", QAOA_proxy(p, gamma_vec, beta_vec, num_constraints, num_qubits, terms_to_drop_in_expectation))
+# end = time.time()
+# print("Elapsed time: ", end-start)
+# start = time.time()
+# print("QAOA_proxy ", QAOA_proxy(p, gamma_vec, beta_vec, num_constraints, num_qubits, terms_to_drop_in_expectation))
+# end = time.time()
+# print("Elapsed time: ", end-start)
