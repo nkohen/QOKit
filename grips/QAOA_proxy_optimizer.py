@@ -1,5 +1,5 @@
 from qokit.fur.qaoa_simulator_base import TermsType
-from QAOA_simulator import get_expectation
+from QAOA_simulator import get_expectation, get_simulator, get_overlap
 import numpy as np
 import scipy
 import networkx as nx
@@ -12,17 +12,20 @@ def QAOA_proxy_optimize(
     p: int,
     init_gamma: np.ndarray,
     init_beta: np.ndarray,
-    num_graphs: int = 20,
+    num_graphs: int = 50,
     optimizer_method: str = "COBYLA",
     optimizer_options: dict | None = None,
     init_tweaks: list[list[float]] = [0,0,1,1],
 ) -> tuple[float, float, float, float]:
     ising_models = []
+    sims = []
     for _ in range(num_graphs):
         G = nx.erdos_renyi_graph(num_qubits, 0.5)
         while (G.number_of_edges() != num_constraints):
             G = nx.erdos_renyi_graph(num_qubits, 0.5)
-        ising_models.append(list(mc.get_maxcut_terms(G)))
+        terms = mc.get_maxcut_terms(G)
+        ising_models.append(list(terms))
+        sims.append(get_simulator(num_qubits, terms))
 
     def iof(*args) -> float:
         h, hc, l, r = args[0][0], args[0][1], args[0][2], args[0][3]
@@ -30,7 +33,7 @@ def QAOA_proxy_optimize(
         expectation_sum = 0
         for i in range(num_graphs):
             ising_model = ising_models[i]
-            expectation_sum += get_expectation(num_qubits, ising_model, result["gamma"], result["beta"])
+            expectation_sum += get_expectation(num_qubits, ising_model, result["gamma"], result["beta"], sims[i])
         return -expectation_sum
 
     best_result = None
