@@ -5,6 +5,7 @@ import scipy
 import qokit.maxcut as mc
 from QAOA_proxy import QAOA_proxy_run
 import Graph_util
+from sklearn import linear_model, LinearRegression
 
 def QAOA_proxy_optimize(
     num_constraints: int,
@@ -46,3 +47,37 @@ def QAOA_proxy_optimize(
 
 
     return best_result.x[0], best_result.x[1], best_result.x[2], best_result.x[3]
+
+def find_optimal_parameters(min_N: int, max_N: int, p: int) -> dict:
+    init_gamma, init_beta = np.full((2, p), 0.1)
+    init_tweaks = []
+    results = dict()
+
+    for N in range(min_N, max_N + 1):
+        max_edges = N*(N-1)//2
+
+        # For the first run of each new N, set init_tweaks to be the
+        # best parameters in the previous N for nearby number of edges.
+        if (N == min_N):
+            init_tweaks = [(0, 0, 1, 1)]
+        elif (N-1, max_edges // 3) in results:
+            init_tweaks = [results[N-1, max_edges // 3]]
+        elif (N-1, (max_edges // 3) - 1) in results:
+            init_tweaks = [results[N-1, (max_edges // 3) - 1]]
+        elif (N-1, (max_edges // 3) - 2) in results:
+            init_tweaks = [results[N-1, (max_edges // 3) - 2]]
+        
+        # To make things faster, we only sample every third value of num_edges
+        for num_edges in range(max_edges // 3, max_edges - 3, 3):
+            h, hc, l, r = QAOA_proxy_optimize(num_edges, N, p, init_gamma, init_beta, init_tweaks=init_tweaks)
+            results[N, num_edges] = (h, hc, l, r)
+            # Set the initial parameters for the next run
+            init_tweaks = [(h, hc, l, r)]
+    
+    return results
+
+def linear_regression_for_parameters(optimal_parameters: dict):
+    x = np.array(list(optimal_parameters.keys()))
+    y = np.array(list(optimal_parameters.values()))
+    regr = linear_model.LinearRegression().fit(x, y)
+    return regr, regr.score(x, y)
