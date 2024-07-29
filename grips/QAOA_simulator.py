@@ -18,7 +18,11 @@ Most other functions are written only for the purpose of QAOA_run to use them.
 
 def get_simulator(N: int, terms: TermsType, sim_or_none: QAOAFastSimulatorBase | None = None, simulator_name: str = "auto") -> QAOAFastSimulatorBase:
     if sim_or_none is None:
-        simclass = choose_simulator(name=simulator_name)
+        # For small graphs, if we don't specify the simulator_name, force simulator to use CPU. Examples show that CPU and GPU are equally fast around N == 8.
+        if (N <= 7) and (simulator_name == "auto"):
+            simclass = choose_simulator(name="python")
+        else: # If simulator_name is not given, will default to GPU for larger graphs.
+            simclass = choose_simulator(name=simulator_name)
         return simclass(N, terms=terms)
     else:
         return sim_or_none

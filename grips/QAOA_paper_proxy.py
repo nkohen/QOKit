@@ -71,6 +71,7 @@ def number_of_costs_at_distance_paper_proxy(cost_1: int, cost_2: int, distance: 
     sum = 0
     for common_constraints in range(max(0, cost_1 + cost_2 - num_constraints), min(cost_1, cost_2) + 1):
         sum += prob_common_at_distance_paper(num_constraints, num_qubits, common_constraints, cost_1, cost_2, distance)
+
     p_cost = prob_cost_paper(cost_1, num_constraints, prob_edge)
     return (math.comb(num_qubits, distance) / p_cost) * sum
 
