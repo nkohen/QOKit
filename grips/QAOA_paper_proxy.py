@@ -66,7 +66,6 @@ def prob_common_at_distance_paper(num_constraints: int, num_qubits: int, common_
         [prob_both, prob_one, prob_one, prob_neither],
     )
 
-
 # N(c'; d, c) from paper
 def number_of_costs_at_distance_paper_proxy(cost_1: int, cost_2: int, distance: int, num_constraints: int, num_qubits: int, prob_edge: float = 0.5) -> float:
     sum = 0
