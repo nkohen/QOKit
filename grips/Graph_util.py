@@ -1,7 +1,7 @@
 import networkx as nx
 import numpy as np
 
-def erdos_reyni(num_verts: int, num_edges: int, seed: int | None = None) -> nx.Graph:
+def erdos_renyi(num_verts: int, num_edges: int, seed: int | None = None) -> nx.Graph:
     G = nx.complete_graph(num_verts)
     if (seed is not None):
         np.random.seed(seed)

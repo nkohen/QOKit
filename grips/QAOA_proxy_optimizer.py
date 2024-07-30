@@ -1,11 +1,10 @@
-from qokit.fur.qaoa_simulator_base import TermsType
 from QAOA_simulator import get_expectation, get_simulator
 import numpy as np
 import scipy
 import qokit.maxcut as mc
 from QAOA_proxy import QAOA_proxy_run
 import Graph_util
-from sklearn import linear_model, LinearRegression
+from sklearn import linear_model
 
 def QAOA_proxy_optimize(
     num_constraints: int,
@@ -16,12 +15,12 @@ def QAOA_proxy_optimize(
     num_graphs: int = 50,
     optimizer_method: str = "COBYLA",
     optimizer_options: dict | None = None,
-    init_tweaks: list[list[float]] = [0,0,1,1],
+    init_tweaks: list[tuple[float, float, float, float]] = [0,0,1,1],
 ) -> tuple[float, float, float, float]:
     ising_models = []
     sims = []
     for _ in range(num_graphs):
-        G = Graph_util.erdos_reyni(num_qubits, num_constraints)
+        G = Graph_util.erdos_renyi(num_qubits, num_constraints)
         terms = mc.get_maxcut_terms(G)
         ising_models.append(list(terms))
         sims.append(get_simulator(num_qubits, terms))
@@ -50,29 +49,38 @@ def QAOA_proxy_optimize(
 
 def find_optimal_parameters(min_N: int, max_N: int, p: int) -> dict:
     init_gamma, init_beta = np.full((2, p), 0.1)
-    init_tweaks = []
+    prev_tweaks = [] # Now only used until we have at least 3 data points
     results = dict()
 
     for N in range(min_N, max_N + 1):
+        print(f"Starting work on N={N}")
         max_edges = N*(N-1)//2
 
-        # For the first run of each new N, set init_tweaks to be the
+        # For the first run of each new N, set prev_tweaks to be the
         # best parameters in the previous N for nearby number of edges.
         if (N == min_N):
-            init_tweaks = [(0, 0, 1, 1)]
+            prev_tweaks = (0, 0, 1, 1)
         elif (N-1, max_edges // 3) in results:
-            init_tweaks = [results[N-1, max_edges // 3]]
+            prev_tweaks = results[N-1, max_edges // 3]
         elif (N-1, (max_edges // 3) - 1) in results:
-            init_tweaks = [results[N-1, (max_edges // 3) - 1]]
+            prev_tweaks = results[N-1, (max_edges // 3) - 1]
         elif (N-1, (max_edges // 3) - 2) in results:
-            init_tweaks = [results[N-1, (max_edges // 3) - 2]]
+            prev_tweaks = results[N-1, (max_edges // 3) - 2]
         
         # To make things faster, we only sample every third value of num_edges
         for num_edges in range(max_edges // 3, max_edges - 3, 3):
-            h, hc, l, r = QAOA_proxy_optimize(num_edges, N, p, init_gamma, init_beta, init_tweaks=init_tweaks)
+            inits = []
+            if len(results) < 3:
+                inits = [prev_tweaks]
+            else:
+                regr_so_far, _ = linear_regression_for_parameters(results)
+                init_guess = regr_so_far.predict(np.array([[N, num_edges]]))
+                inits = [(init_guess[0][0], init_guess[0][1], init_guess[0][2], init_guess[0][3])]
+
+            h, hc, l, r = QAOA_proxy_optimize(num_edges, N, p, init_gamma, init_beta, init_tweaks=inits)
             results[N, num_edges] = (h, hc, l, r)
             # Set the initial parameters for the next run
-            init_tweaks = [(h, hc, l, r)]
+            prev_tweaks = (h, hc, l, r)
     
     return results
 
