@@ -14,7 +14,7 @@ class JuliaWarning(Warning):
 warnings.filterwarnings("once", category=JuliaWarning)
 
 
-USE_JULIA=True
+USE_JULIA=False
 if USE_JULIA:
     from juliacall import Main as jl
     dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -151,6 +151,8 @@ def QAOA_paper_proxy_run(
     # the above returns a scipy optimization result object that has multiple attributes
     # result.x gives the optimal solutionsol.success #bool whether algorithm succeeded
     # result.message #message of why algorithms terminated
+
+    
     # result.nfev is number of iterations used (here, number of QAOA calls)
     end_time = time.time()
 
