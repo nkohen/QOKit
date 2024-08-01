@@ -23,9 +23,9 @@ def prob_cost_norm(cost: int, prob_cost_mean: float, prob_cost_cov: float) -> fl
 
 
 # N(c') from paper
-def number_with_cost_norm_proxy(cost: int, num_constraints: int, num_qubits: int, prob_edge: float = 0.5) -> float:
+def number_with_cost_norm_proxy(cost: int, num_qubits: int) -> float:
     scale = 1 << num_qubits
-    return prob_cost_norm(cost, num_constraints, prob_edge) * scale
+    return prob_cost_norm(cost, num_qubits/2, num_qubits/4) * scale
 
 
 # N(c'; d, c) from paper
@@ -38,14 +38,14 @@ def number_of_costs_at_distance_norm_proxy(cost_1: int, cost_2: int, distance: i
     return multivariate_normal([N_cost_mean, N_distance_mean], cov_mat).pdf([cost_2, distance])*(1 << num_qubits)
 
 # Computes the sum inside the for loop of Algorithm 1 in paper
-def compute_amplitude_sum_norm(prev_amplitudes: np.ndarray, gamma: float, beta: float, cost_1: int, num_constraints: int, num_qubits: int) -> complex:
+def compute_amplitude_sum_norm(prev_amplitudes: np.ndarray, gamma: float, beta: float, cost_1: int, num_constraints: int, num_qubits: int, c_mean: float, cov_1: float, cov_2: float) -> complex:
     sum = 0
     for cost_2 in range(num_constraints + 1):
         for distance in range(num_qubits + 1):
             # Should I np-ify all of the stuff here?
             beta_factor = (np.cos(beta) ** (num_qubits - distance)) * ((-1j * np.sin(beta)) ** distance)
             gamma_factor = np.exp(-1j * gamma * cost_2)
-            num_costs_at_distance = number_of_costs_at_distance_norm_proxy(cost_1, cost_2, distance, num_constraints, num_qubits)
+            num_costs_at_distance = number_of_costs_at_distance_norm_proxy(cost_1, cost_2, distance, num_qubits, c_mean, cov_1, cov_2)
             sum += beta_factor * gamma_factor * prev_amplitudes[cost_2] * num_costs_at_distance
     return sum
 
@@ -54,7 +54,7 @@ def compute_amplitude_sum_norm(prev_amplitudes: np.ndarray, gamma: float, beta: 
 # TODO: What if instead of optimizing expectation proxy we instead optimize high cost amplitudes (using e.g. exponential weighting)
 # Algorithm 1 from paper
 # num_constraints = number of edges, and num_qubits = number of vertices
-def QAOA_norm_proxy_python(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraints: int, num_qubits: int, terms_to_drop_in_expectation: int = 0):
+def QAOA_norm_proxy(p: int, gamma: np.ndarray, beta: np.ndarray, num_constraints: int, num_qubits: int, c_mean: float, cov_1: float, cov_2: float, terms_to_drop_in_expectation: int = 0):
     num_costs = num_constraints + 1
     amplitude_proxies = np.zeros([p + 1, num_costs], dtype=complex)
     init_amplitude = np.sqrt(1 / (1 << num_qubits))
@@ -64,21 +64,21 @@ def QAOA_norm_proxy_python(p: int, gamma: np.ndarray, beta: np.ndarray, num_cons
     for current_depth in range(1, p + 1):
         for cost_1 in range(num_costs):
             amplitude_proxies[current_depth][cost_1] = compute_amplitude_sum_norm(
-                amplitude_proxies[current_depth - 1], gamma[current_depth - 1], beta[current_depth - 1], cost_1, num_constraints, num_qubits
+                amplitude_proxies[current_depth - 1], gamma[current_depth - 1], beta[current_depth - 1], cost_1, num_constraints, num_qubits, c_mean, cov_1, cov_2
             )
 
     expected_proxy = 0
     for cost in range(terms_to_drop_in_expectation, num_costs):
-        expected_proxy += number_with_cost_norm_proxy(cost, num_constraints, num_qubits) * (abs(amplitude_proxies[p][cost]) ** 2) * cost
+        expected_proxy += number_with_cost_norm_proxy(cost, num_qubits) * (abs(amplitude_proxies[p][cost]) ** 2) * cost
 
     return amplitude_proxies, expected_proxy
 
 
 
-def inverse_norm_proxy_objective_function(num_constraints: int, num_qubits: int, p: int, expectations: list[np.ndarray] | None) -> typing.Callable:
+def inverse_norm_proxy_objective_function(num_constraints: int, num_qubits: int, p: int, c_mean: float, cov_1: float, cov_2: float, expectations: list[np.ndarray] | None) -> typing.Callable:
     def inverse_objective(*args) -> float:
         gamma, beta = args[0][:p], args[0][p:]
-        _, expectation = QAOA_norm_proxy(p, gamma, beta, num_constraints, num_qubits)
+        _, expectation = QAOA_norm_proxy(p, gamma, beta, num_constraints, num_qubits, c_mean, cov_1, cov_2)
         current_time = time.time()
 
         if expectations is not None:
@@ -95,6 +95,9 @@ def QAOA_norm_proxy_run(
     p: int,
     init_gamma: np.ndarray,
     init_beta: np.ndarray,
+    c_mean: float,
+    cov_1: float,
+    cov_2: float,
     optimizer_method: str = "COBYLA",
     optimizer_options: dict | None = None,
     expectations: list[np.ndarray] | None = None,
@@ -103,7 +106,7 @@ def QAOA_norm_proxy_run(
 
     start_time = time.time()
     result = scipy.optimize.minimize(
-        inverse_norm_proxy_objective_function(num_constraints, num_qubits, p, expectations),
+        inverse_norm_proxy_objective_function(num_constraints, num_qubits, p, c_mean, cov_1, cov_2, expectations),
         init_freq,
         args=(),
         method=optimizer_method,
@@ -123,7 +126,7 @@ def QAOA_norm_proxy_run(
         expectations = list(map(make_time_relative, expectations))
 
     gamma, beta = result.x[:p], result.x[p:]
-    _, expectation = QAOA_norm_proxy(p, gamma, beta, num_constraints, num_qubits)
+    _, expectation = QAOA_norm_proxy(p, gamma, beta, num_constraints, num_qubits, c_mean, cov_1, cov_2)
 
     return {
         "gamma": gamma,

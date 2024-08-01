@@ -2,21 +2,21 @@ from QAOA_simulator import get_expectation, get_simulator
 import numpy as np
 import scipy
 import qokit.maxcut as mc
-from QAOA_proxy import QAOA_proxy_run
+from QAOA_norm_proxy import QAOA_norm_proxy_run
 import Graph_util
 from sklearn import linear_model
 
-def QAOA_proxy_optimize(
+def QAOA_norm_proxy_optimize(
     num_constraints: int,
     num_qubits: int,
     p: int,
     init_gamma: np.ndarray,
     init_beta: np.ndarray,
+    init_tweaks: list[tuple[float, float, float]],
     num_graphs: int = 50,
     optimizer_method: str = "COBYLA",
-    optimizer_options: dict | None = None,
-    init_tweaks: list[tuple[float, float, float, float]] = [0,0,1,1],
-) -> tuple[float, float, float, float]:
+    optimizer_options: dict | None = None
+) -> tuple[float, float, float]:
     ising_models = []
     sims = []
     for _ in range(num_graphs):
@@ -26,8 +26,8 @@ def QAOA_proxy_optimize(
         sims.append(get_simulator(num_qubits, terms))
 
     def iof(*args) -> float:
-        h, hc, l, r = args[0][0], args[0][1], args[0][2], args[0][3]
-        result = QAOA_proxy_run(num_constraints, num_qubits, p, init_gamma, init_beta, optimizer_method, optimizer_options, None, h, hc, l, r)
+        c_mean, cov_1, cov_2 = args[0][0], args[0][1], args[0][2]
+        result = QAOA_norm_proxy_run(num_constraints, num_qubits, p, init_gamma, init_beta, c_mean, cov_1, cov_2, optimizer_method, optimizer_options, None)
         expectation_sum = 0
         for i in range(num_graphs):
             ising_model = ising_models[i]
@@ -36,18 +36,18 @@ def QAOA_proxy_optimize(
 
     best_result = None
     best_objective = 0
-    for init_h_tweak, init_hc_tweak, init_l_tweak, init_r_tweak in init_tweaks:
-        init_freq = np.hstack([init_h_tweak, init_hc_tweak, init_l_tweak, init_r_tweak])
-        result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(None, 1 << (num_qubits - 4)), (None, None), (0, None), (0, None)])
+    for init_c_mean, init_cov_1, init_cov_2 in init_tweaks:
+        init_freq = np.hstack([init_c_mean, init_cov_1, init_cov_2])
+        result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(0, num_constraints), (0, 2*(num_constraints**2)/3, (0, 2*(num_constraints**2)/3)])
         result_objective_value = iof(result.x)
         if (result_objective_value < best_objective):
             best_result = result
             best_objective = result_objective_value
 
 
-    return best_result.x[0], best_result.x[1], best_result.x[2], best_result.x[3]
+    return best_result.x[0], best_result.x[1], best_result.x[2]
 
-def find_optimal_parameters(min_N: int, max_N: int, p: int) -> dict:
+def find_optimal_norm_parameters(min_N: int, max_N: int, p: int) -> dict:
     init_gamma, init_beta = np.full((2, p), 0.1)
     prev_tweaks = [] # Now only used until we have at least 3 data points
     results = dict()
@@ -59,7 +59,7 @@ def find_optimal_parameters(min_N: int, max_N: int, p: int) -> dict:
         # For the first run of each new N, set prev_tweaks to be the
         # best parameters in the previous N for nearby number of edges.
         if (N == min_N):
-            prev_tweaks = (0, 0, 1, 1)
+            prev_tweaks = ((max_edges//3)/2, 10, 1)
         elif (N-1, max_edges // 3) in results:
             prev_tweaks = results[N-1, max_edges // 3]
         elif (N-1, (max_edges // 3) - 1) in results:
@@ -73,18 +73,18 @@ def find_optimal_parameters(min_N: int, max_N: int, p: int) -> dict:
             if len(results) < 3:
                 inits = [prev_tweaks]
             else:
-                regr_so_far, _ = linear_regression_for_parameters(results)
+                regr_so_far, _ = linear_regression_for_norm_parameters(results)
                 init_guess = regr_so_far.predict(np.array([[N, num_edges]]))
-                inits = [(init_guess[0][0], init_guess[0][1], init_guess[0][2], init_guess[0][3])]
+                inits = [(init_guess[0][0], init_guess[0][1], init_guess[0][2])]
 
-            h, hc, l, r = QAOA_proxy_optimize(num_edges, N, p, init_gamma, init_beta, init_tweaks=inits)
-            results[N, num_edges] = (h, hc, l, r)
+            c_mean, cov_1, cov_2 = QAOA_proxy_optimize(num_edges, N, p, init_gamma, init_beta, init_tweaks=inits)
+            results[N, num_edges] = (c_mean, cov_1, cov_2)
             # Set the initial parameters for the next run
-            prev_tweaks = (h, hc, l, r)
+            prev_tweaks = (c_mean, cov_1, cov_2)
     
     return results
 
-def linear_regression_for_parameters(optimal_parameters: dict):
+def linear_regression_for_norm_parameters(optimal_parameters: dict):
     x = np.array(list(optimal_parameters.keys()))
     y = np.array(list(optimal_parameters.values()))
     regr = linear_model.LinearRegression().fit(x, y)
