@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import numpy as np
 
 """Plots a 3d wireframe for the given data
@@ -14,7 +15,7 @@ import numpy as np
     """
 
 
-def plot_wireframe(xs: np.ndarray, ys: np.ndarray, data: np.ndarray, title: str, xlabel: str, ylabel: str, zlabel: str) -> plt.Figure:
+def plot_wireframe(xs: np.ndarray, ys: np.ndarray, data: np.ndarray, title: str, xlabel: str, ylabel: str, zlabel: str):
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
     ax.azim = -130
@@ -26,7 +27,33 @@ def plot_wireframe(xs: np.ndarray, ys: np.ndarray, data: np.ndarray, title: str,
     ax.set_ylabel(ylabel)
     ax.set_zlabel(zlabel)
     ax.set_title(title)
-    return fig
+    return fig, ax
+
+
+"""Plots a copper 3d surface for the given data
+
+    Parameters
+    ----------
+    xs : np.ndarray
+        x-coordinates (no duplication)
+    ys : np.ndarray
+        y-coordinates (no duplication)
+    data : np.ndarray (2-dimensional)
+        data[x][y] will be the z-coordinate at (x, y)
+    """
+def plot_surface(xs: np.ndarray, ys: np.ndarray, data: np.ndarray, title: str, xlabel: str, ylabel: str, zlabel: str):
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    ax.azim = -130
+    x, y = np.meshgrid(xs, ys)
+
+    ax.plot_surface(x, y, data.T, cmap="copper")
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_zlabel(zlabel)
+    ax.set_title(title)
+    return fig, ax
 
 
 """Plots a 3d scatter plot for the given data
@@ -42,7 +69,7 @@ def plot_wireframe(xs: np.ndarray, ys: np.ndarray, data: np.ndarray, title: str,
     """
 
 
-def plot_3d_scatter(xs: np.ndarray, ys: np.ndarray, data: np.ndarray, title: str, xlabel: str, ylabel: str, zlabel: str) -> plt.Figure:
+def plot_3d_scatter(xs: np.ndarray, ys: np.ndarray, data: np.ndarray, title: str, xlabel: str, ylabel: str, zlabel: str):
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
     ax.azim = -130
@@ -63,8 +90,16 @@ def plot_3d_scatter(xs: np.ndarray, ys: np.ndarray, data: np.ndarray, title: str
     ax.set_ylabel(ylabel)
     ax.set_zlabel(zlabel)
     ax.set_title(title)
-    return fig
+    return fig, ax
 
+"""Given a Figure and corresponding 3D Axes, rotates the figure and saves the animation to a gif
+"""
+def animate_3d_rotation(fig, ax, filename):
+    def rotate(angle):
+        ax.view_init(azim=angle)
+
+    rot_animation = animation.FuncAnimation(fig, rotate, frames=np.arange(0, 362, 2), interval=100)
+    rot_animation.save(filename, dpi=80, writer='imagemagick')
 
 """Plots a 2d projection (parallel projection onto y=0) of a 3d scatter plot for the given data
 
