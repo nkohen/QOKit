@@ -32,10 +32,10 @@ def number_with_cost_norm_proxy(cost: int, num_constraints: int, num_qubits: int
 def number_of_costs_at_distance_norm_proxy(cost_1: int, cost_2: int, distance: int, num_qubits: int, N_cost_mean: float, N_cov_1: float, N_cov_2: float) -> float:
     N_distance_mean = num_qubits / 2
 
-    P = np.matrix([[N_cost_mean - cost_1, N_distance_mean], [N_distance_mean, cost_1 - N_cost_mean]])
-    cov_mat = np.matmul(np.matmul(P, np.matrix([[N_cov_1, 0], [0, N_cov_2]])), P)/(N_cost_mean**2 + N_distance_mean**2 + cost_1**2 - 2*N_cost_mean*cost_1)
+    P = np.matrix([[cost_1 - N_cost_mean, N_distance_mean], [-N_distance_mean, cost_1 - N_cost_mean]])
+    P_inv = scipy.linalg.inv(P)
+    cov_mat = P@np.matrix([[N_cov_1, 0], [0, N_cov_2]])@P_inv
     return multivariate_normal([N_cost_mean, N_distance_mean], cov_mat).pdf([cost_2, distance])*(1 << num_qubits)
-# TODO: Check this
 
 # Computes the sum inside the for loop of Algorithm 1 in paper
 def compute_amplitude_sum_norm(prev_amplitudes: np.ndarray, gamma: float, beta: float, cost_1: int, num_constraints: int, num_qubits: int) -> complex:
