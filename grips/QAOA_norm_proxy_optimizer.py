@@ -6,6 +6,7 @@ from QAOA_norm_proxy import QAOA_norm_proxy_run
 import Graph_util
 from sklearn import linear_model
 
+
 def QAOA_norm_proxy_optimize(
     num_constraints: int,
     num_qubits: int,
@@ -38,35 +39,42 @@ def QAOA_norm_proxy_optimize(
     best_objective = 0
     for init_c_mean, init_cov_1, init_cov_2 in init_tweaks:
         init_freq = np.hstack([init_c_mean, init_cov_1, init_cov_2])
-        result = scipy.optimize.minimize(iof, init_freq, args=(), method=optimizer_method, options = optimizer_options, bounds = [(0, num_constraints), (0, 2*(num_constraints**2)/3), (0, 2*(num_constraints**2)/3)])
+        result = scipy.optimize.minimize(
+            iof,
+            init_freq,
+            args=(),
+            method=optimizer_method,
+            options=optimizer_options,
+            bounds=[(0, num_constraints), (0, 2 * (num_constraints**2) / 3), (0, 2 * (num_constraints**2) / 3)],
+        )
         result_objective_value = iof(result.x)
-        if (result_objective_value < best_objective):
+        if result_objective_value < best_objective:
             best_result = result
             best_objective = result_objective_value
 
-
     return best_result.x[0], best_result.x[1], best_result.x[2]
+
 
 def find_optimal_norm_parameters(min_N: int, max_N: int, p: int) -> dict:
     init_gamma, init_beta = np.full((2, p), 0.1)
-    prev_tweaks = [] # Now only used until we have at least 3 data points
+    prev_tweaks = []  # Now only used until we have at least 3 data points
     results = dict()
 
     for N in range(min_N, max_N + 1):
         print(f"Starting work on N={N}")
-        max_edges = N*(N-1)//2
+        max_edges = N * (N - 1) // 2
 
         # For the first run of each new N, set prev_tweaks to be the
         # best parameters in the previous N for nearby number of edges.
-        if (N == min_N):
-            prev_tweaks = ((max_edges//3)/2, 10, 1)
-        elif (N-1, max_edges // 3) in results:
-            prev_tweaks = results[N-1, max_edges // 3]
-        elif (N-1, (max_edges // 3) - 1) in results:
-            prev_tweaks = results[N-1, (max_edges // 3) - 1]
-        elif (N-1, (max_edges // 3) - 2) in results:
-            prev_tweaks = results[N-1, (max_edges // 3) - 2]
-        
+        if N == min_N:
+            prev_tweaks = ((max_edges // 3) / 2, 10, 1)
+        elif (N - 1, max_edges // 3) in results:
+            prev_tweaks = results[N - 1, max_edges // 3]
+        elif (N - 1, (max_edges // 3) - 1) in results:
+            prev_tweaks = results[N - 1, (max_edges // 3) - 1]
+        elif (N - 1, (max_edges // 3) - 2) in results:
+            prev_tweaks = results[N - 1, (max_edges // 3) - 2]
+
         # To make things faster, we only sample every third value of num_edges
         for num_edges in range(max_edges // 3, max_edges - 3, 3):
             inits = []
@@ -81,8 +89,9 @@ def find_optimal_norm_parameters(min_N: int, max_N: int, p: int) -> dict:
             results[N, num_edges] = (c_mean, cov_1, cov_2)
             # Set the initial parameters for the next run
             prev_tweaks = (c_mean, cov_1, cov_2)
-    
+
     return results
+
 
 def linear_regression_for_norm_parameters(optimal_parameters: dict):
     x = np.array(list(optimal_parameters.keys()))
