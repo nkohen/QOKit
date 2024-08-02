@@ -14,7 +14,7 @@ class JuliaWarning(Warning):
 warnings.filterwarnings("once", category=JuliaWarning)
 
 
-USE_JULIA=True
+USE_JULIA=False
 if USE_JULIA:
     from juliacall import Main as jl
     dir_path = os.path.dirname(os.path.realpath(__file__))
