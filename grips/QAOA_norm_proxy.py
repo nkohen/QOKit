@@ -3,7 +3,7 @@ import math
 import typing
 import time
 import scipy
-from scipy.stats import binom, multinomial, multivariate_normal
+from scipy.stats import multivariate_normal
 
 """
 This file implements the QAOA proxy algorithm for MaxCut from:
@@ -35,7 +35,8 @@ def number_of_costs_at_distance_norm_proxy(cost_1: int, cost_2: int, distance: i
     P = np.matrix([[cost_1 - N_cost_mean, N_distance_mean], [-N_distance_mean, cost_1 - N_cost_mean]])
     P_inv = scipy.linalg.inv(P)
     cov_mat = P@np.matrix([[N_cov_1, 0], [0, N_cov_2]])@P_inv
-    return multivariate_normal([N_cost_mean, N_distance_mean], cov_mat).pdf([cost_2, distance])*(1 << num_qubits)
+    cov_mat[0, 1] = cov_mat[1, 0] # cov_mat must be symmetric and is prone to floating point error
+    return multivariate_normal([N_cost_mean, N_distance_mean], cov_mat).pdf([cost_2, distance])*(1 << num_qubits), cov_mat
 
 # Computes the sum inside the for loop of Algorithm 1 in paper
 def compute_amplitude_sum_norm(prev_amplitudes: np.ndarray, gamma: float, beta: float, cost_1: int, num_constraints: int, num_qubits: int, c_mean: float, cov_1: float, cov_2: float) -> complex:
