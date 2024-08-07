@@ -33,7 +33,7 @@ Pkg.add("PythonCall")
   * To enable the Julia backend, make sure `USE_JULIA=True` is set near the top of this file. If `USE_JULIA=False` is set, then the python implementation will be used.
 * [setup_juliacall.py](https://github.com/nkohen/QOKit/blob/grips/grips/setup_juliacall.py)
   * Python script for installing the software necessary for the Julia backend for the QAOA proxies. 
-* [QAOA_paper_proxy.jl](https://github.com/nkohen/QOKit/blob/grips/grips/QAOA_paper_proxy.jl)
+* [paper_proxy.jl](https://github.com/nkohen/QOKit/blob/grips/grips/paper_proxy.jl)
   * Julia implementation of the original [parameter-setting heuristic](https://journals.aps.org/prresearch/pdf/10.1103/PhysRevResearch.6.023171) from the paper.
 * [QAOA_proxy.jl](https://github.com/nkohen/QOKit/blob/grips/grips/QAOA_proxy.jl)
   * Julia implementation of our parameter-setting heuristic.
